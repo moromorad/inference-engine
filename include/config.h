@@ -1,5 +1,4 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#pragma once
 
 // Matches the 28-byte header in the AI's binary file
 struct Config {
@@ -34,4 +33,3 @@ struct TransformerWeights {
     float* wcls;             
 };
 
-#endif // CONFIG_H

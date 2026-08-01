@@ -1,0 +1,6 @@
+# Build artifacts
+build/
+
+# Model weights and datasets
+models/
+*.bin
