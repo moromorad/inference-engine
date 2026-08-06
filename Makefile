@@ -1,5 +1,7 @@
 CXX = clang++
-CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -I./include
+OMP_PREFIX = $(shell brew --prefix libomp)
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -I./include -Xpreprocessor -fopenmp -I$(OMP_PREFIX)/include
+LDFLAGS = -L$(OMP_PREFIX)/lib -lomp
 
 # 1. Directories
 BUILD_DIR = build
@@ -25,7 +27,7 @@ all: $(TARGET)
 # $@ means "the target name" (TARGET)
 $(TARGET): $(CORE_OBJS) $(MAIN_OBJ)
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 # 6. Run Phase
 run: $(TARGET)
@@ -34,7 +36,7 @@ run: $(TARGET)
 # 6. Test Linking Phase
 test: $(CORE_OBJS) $(TEST_OBJ)
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $(TEST_TARGET)
+	$(CXX) $(CXXFLAGS) $^ -o $(TEST_TARGET) $(LDFLAGS)
 	./$(TEST_TARGET)
 
 # 7. Compile src/ files into build/obj/

@@ -58,11 +58,40 @@ float* Tokenizer::get_embedding(Model& model, int token_id) {
 
 std::vector<int> Tokenizer::tokenize(const std::string& text) {
     std::vector<int> tokens;
-    
-    while (true) {
 
+    // Phase 1: Encode each character as its own token
+    for (size_t i = 0; i < text.size(); i++) {
+        std::string ch(1, text[i]);
+        int id = find_token_id(ch);
+        if (id == -1) {
+            std::cerr << "Character not in vocab: '" << ch << "'\n";
+            continue;
+        }
+        tokens.push_back(id);
     }
-    
-    
+
+    // Phase 2: BPE merge loop — greedily merge the highest-scoring pair
+    while (true) {
+        float best_score = -1e10;
+        int best_id = -1;
+        int best_idx = -1;
+
+        for (size_t i = 0; i + 1 < tokens.size(); i++) {
+            std::string merged = vocab[tokens[i]] + vocab[tokens[i + 1]];
+            int id = find_token_id(merged);
+            if (id != -1 && vocab_scores[id] > best_score) {
+                best_score = vocab_scores[id];
+                best_id = id;
+                best_idx = i;
+            }
+        }
+
+        if (best_idx == -1) break; // No more merges possible
+
+        // Replace the pair at best_idx with the merged token
+        tokens[best_idx] = best_id;
+        tokens.erase(tokens.begin() + best_idx + 1);
+    }
+
     return tokens;
 }
