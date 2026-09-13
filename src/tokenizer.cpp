@@ -3,11 +3,9 @@
 #include <iostream>
 
 
-
-// Constructor to set the size
 Tokenizer::Tokenizer(int size) : vocab_size(size) {}
 
-// The load function we just discussed
+
 void Tokenizer::load(const char* filepath) {
     FILE* file = fopen(filepath, "rb");
 

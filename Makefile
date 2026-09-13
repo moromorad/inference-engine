@@ -39,6 +39,10 @@ test: $(CORE_OBJS) $(TEST_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $(TEST_TARGET) $(LDFLAGS)
 	./$(TEST_TARGET)
 
+# PyTorch Parity Check Phase
+parity: $(OBJ_DIR)/kernels.o
+	.venv/bin/python3 scripts/compare_with_pytorch.py
+
 # 7. Compile src/ files into build/obj/
 $(OBJ_DIR)/%.o: src/%.cpp
 	@mkdir -p $(OBJ_DIR)
