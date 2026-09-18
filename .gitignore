@@ -8,3 +8,4 @@ models/
 # Benchmark persistence data
 benchmark_results/
 benchmarks/results/
+benchmarks/reference_llama2c/
