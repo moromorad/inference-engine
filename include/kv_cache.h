@@ -1,8 +1,12 @@
 #pragma once
 
 #include "config.h"
-#include <vector>
 #include <cstddef>
+#include <vector>
+
+// ============================================================================
+// KEY-VALUE CACHE (KV CACHE)
+// ============================================================================
 
 /**
  * KV Cache (Key-Value Cache) for Transformer Autoregressive Generation.

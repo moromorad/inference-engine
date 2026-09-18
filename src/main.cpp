@@ -1,34 +1,47 @@
-#include <iostream>
+#include "engine.h"
 #include "model.h"
 #include "tokenizer.h"
-
+#include <iostream>
+#include <string>
 
 int main() {
-    std::cout << "Booting Inference Engine...\n\n";
+  std::cout << "========================================\n";
+  std::cout << "       Stories110M Inference Engine\n";
+  std::cout << "========================================\n\n";
 
-    // 1. Initialize the Model (Triggers the constructor and mmap)
-    Model model("models/stories15M.bin");
+  // 1. Initialize the Model (loads weights via mmap)
+  Model model("models/stories110M.bin");
 
-    // 2. Initialize the Tokenizer
-    Tokenizer tokenizer(std::abs(model.config.vocab_size));
-    tokenizer.load("models/tokenizer.bin");
+  // 2. Initialize the Tokenizer
+  Tokenizer tokenizer(std::abs(model.config.vocab_size));
+  tokenizer.load("models/tokenizer.bin");
 
-    // Prompt the user
-    std::cout << "Enter string for tokenization ";
-    std::string text;
-    std::getline(std::cin, text);
+  std::cout << "\nModel and Tokenizer loaded successfully!\n";
+  std::cout << "Enter prompt to generate a story (type 'exit' or press Ctrl+D "
+               "to quit):\n";
 
-    // Tokenize the string
-    std::vector<int> tokens = tokenizer.tokenize(text);
+  GenerationConfig gen_config;
+  gen_config.max_new_tokens = 256;
+  gen_config.temperature = 0.8f;
+  gen_config.top_k = 40;
 
-    // Print the tokens
-    std::cout << "\nTokens:\n";
-    for (int token : tokens) {
-        std::cout << "  [" << token << "] \"" << tokenizer.vocab[token] << "\"\n";
+  while (true) {
+    std::cout << "\n> ";
+    std::string prompt;
+    if (!std::getline(std::cin, prompt) || prompt == "exit" ||
+        prompt == "quit") {
+      break;
     }
-    std::cout << std::endl;
 
-    // 3. Forward Pass (Next steps!)
+    if (prompt.empty()) {
+      continue;
+    }
 
-    return 0; // Model destructor automatically unmaps memory here
+    std::cout << "\n--- Story ---\n";
+    generate(prompt, model, tokenizer, gen_config, /*stream=*/true);
+    std::cout << "-------------\n";
+  }
+
+  std::cout << "\nShutting down engine. Goodbye!\n";
+  return 0;
 }

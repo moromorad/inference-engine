@@ -87,11 +87,12 @@ Model::Model(const std::string& model_path) {
     ptr += config.dim;
 
     unsigned long long bytes_read = (char*)ptr - (char*)data;
-    if (bytes_read < file_size) {
+    if (file_size - bytes_read >= (size_t)vocab_size * config.dim * sizeof(float)) {
         weights.wcls = ptr; 
     } else {
         weights.wcls = weights.token_embedding_table; 
     }
+
 
     std::cout << "\nSuccess! mmap complete. All " << file_size / 1024 / 1024 << " MB of weights assigned." << std::endl;
 }

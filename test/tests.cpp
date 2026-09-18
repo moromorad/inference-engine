@@ -4,9 +4,11 @@
 #include "../include/model.h"
 #include "../include/kernels.h"
 #include "../include/kv_cache.h"
+#include "../include/engine.h"
 #include <fstream>
 #include <cstdio>
 #include <vector>
+#include <cmath>
 
 TEST_CASE("Testing Tokenizer::find_token_id") {
     Tokenizer tokenizer(100);
@@ -402,5 +404,187 @@ TEST_SUITE("KVCache") {
         float* head1_k = cache.get_key_head(0, 1, 1);
         CHECK(head1_k[0] == doctest::Approx(30.0f));
         CHECK(head1_k[1] == doctest::Approx(40.0f));
+    }
+}
+
+// ============================================================================
+// ENGINE TESTS: RUNSTATE, TRANSFORMER BLOCK, AND FORWARD PASS
+// ============================================================================
+
+TEST_SUITE("Engine") {
+    TEST_CASE("RunState - Buffer Allocation and Sizing") {
+        Config config = {288, 768, 6, 6, 6, 32000, 256};
+        RunState state(config);
+
+        CHECK(state.x.size() == 288);
+        CHECK(state.xb.size() == 288);
+        CHECK(state.xb2.size() == 288);
+        CHECK(state.hb.size() == 768);
+        CHECK(state.hb2.size() == 768);
+        CHECK(state.q.size() == 288);
+        CHECK(state.k.size() == 288);
+        CHECK(state.v.size() == 288);
+        CHECK(state.att.size() == 6 * 256);
+        CHECK(state.logits.size() == 32000);
+    }
+
+    TEST_CASE("Engine - Transformer Block Execution on Real Model") {
+        Model model("models/stories15M.bin");
+        KVCache kv_cache(model.config);
+        RunState state(model.config);
+
+        // Populate state.x with token embedding for BOS (token 1)
+        int dim = model.config.dim;
+        const float* emb = model.weights.token_embedding_table + (1 * dim);
+        std::copy(emb, emb + dim, state.x.begin());
+
+        // Execute Transformer Block 0 at position 0
+        transformer_block(0, 0, model, kv_cache, state);
+
+        // 1. Verify residual stream state.x is finite and updated
+        bool all_finite = true;
+        bool non_zero = false;
+        for (int i = 0; i < dim; ++i) {
+            if (!std::isfinite(state.x[i])) all_finite = false;
+            if (std::abs(state.x[i]) > 1e-6f) non_zero = true;
+        }
+        CHECK(all_finite);
+        CHECK(non_zero);
+
+        // 2. Verify KV cache at layer 0, pos 0 has been populated with non-zero values
+        float* cached_k = kv_cache.get_key(0, 0);
+        float* cached_v = kv_cache.get_value(0, 0);
+        bool kv_populated = false;
+        for (int i = 0; i < kv_cache.kv_dim; ++i) {
+            if (std::abs(cached_k[i]) > 1e-6f || std::abs(cached_v[i]) > 1e-6f) {
+                kv_populated = true;
+                break;
+            }
+        }
+        CHECK(kv_populated);
+
+        // 3. Verify layer 1 cache is still unpopulated (zeroes)
+        float* cached_k_l1 = kv_cache.get_key(1, 0);
+        bool l1_zero = true;
+        for (int i = 0; i < kv_cache.kv_dim; ++i) {
+            if (cached_k_l1[i] != 0.0f) {
+                l1_zero = false;
+                break;
+            }
+        }
+        CHECK(l1_zero);
+    }
+
+    TEST_CASE("Engine - Full Forward Pass Execution on Real Model") {
+        Model model("models/stories15M.bin");
+        KVCache kv_cache(model.config);
+        RunState state(model.config);
+
+        int vocab_size = std::abs(model.config.vocab_size);
+
+        // Execute full forward pass for BOS token (1) at position 0
+        float* logits = forward(1, 0, model, kv_cache, state);
+
+        REQUIRE(logits != nullptr);
+
+        // Verify all 32,000 logits are valid finite floating-point numbers
+        bool all_finite = true;
+        int max_token = 0;
+        float max_logit = logits[0];
+
+        for (int i = 0; i < vocab_size; ++i) {
+            if (!std::isfinite(logits[i])) {
+                all_finite = false;
+            }
+            if (logits[i] > max_logit) {
+                max_logit = logits[i];
+                max_token = i;
+            }
+        }
+        CHECK(all_finite);
+        CHECK(max_token >= 0);
+        CHECK(max_token < vocab_size);
+        CHECK(max_logit > -100.0f);
+        CHECK(max_logit < 100.0f);
+
+        // Sequential step: pass the predicted next token at position 1
+        float* logits_step2 = forward(max_token, 1, model, kv_cache, state);
+        REQUIRE(logits_step2 != nullptr);
+
+        bool step2_finite = true;
+        for (int i = 0; i < vocab_size; ++i) {
+            if (!std::isfinite(logits_step2[i])) step2_finite = false;
+        }
+        CHECK(step2_finite);
+    }
+
+    TEST_CASE("Engine - Determinism of Forward Pass") {
+        Model model("models/stories15M.bin");
+        int vocab_size = std::abs(model.config.vocab_size);
+
+        // Run 1
+        KVCache kv1(model.config);
+        RunState state1(model.config);
+        float* logits1 = forward(1, 0, model, kv1, state1);
+        std::vector<float> snapshot1(logits1, logits1 + vocab_size);
+
+        // Run 2 (identical inputs with fresh state and cache)
+        KVCache kv2(model.config);
+        RunState state2(model.config);
+        float* logits2 = forward(1, 0, model, kv2, state2);
+
+        // Must match exactly
+        for (int i = 0; i < vocab_size; ++i) {
+            CHECK(logits2[i] == doctest::Approx(snapshot1[i]));
+        }
+    }
+
+    TEST_CASE("Sampling - Argmax at Temperature 0") {
+        std::vector<float> logits = {-3.5f, 1.2f, 8.9f, 0.4f, -10.0f, 4.5f};
+        CHECK(sample_argmax(logits.data(), logits.size()) == 2);
+
+        std::vector<float> all_negative = {-12.0f, -50.0f, -3.1f, -8.0f};
+        CHECK(sample_argmax(all_negative.data(), all_negative.size()) == 2);
+
+        // Unified sample dispatcher with temp=0.0
+        CHECK(sample(logits.data(), logits.size(), 0.0f) == 2);
+    }
+
+    TEST_CASE("Sampling - Top-K with Temperature Scaling") {
+        // Logits where token 1 (score 10.0) and token 4 (score 8.0) are top 2
+        std::vector<float> logits = {1.0f, 10.0f, 2.0f, 0.5f, 8.0f};
+
+        // Top-K = 2 restricts candidate set strictly to tokens {1, 4}
+        // With coin_flip = 0.0f, must choose candidate 1
+        int picked_low = sample_top_k(logits.data(), logits.size(), 2, 1.0f, 0.0f);
+        CHECK(picked_low == 1);
+
+        // With coin_flip near 1.0f (0.999f), must choose candidate 4
+        int picked_high = sample_top_k(logits.data(), logits.size(), 2, 1.0f, 0.999f);
+        CHECK(picked_high == 4);
+
+        // Verify tokens 0, 2, 3 are never selected with Top-K = 2
+        for (float r = 0.0f; r < 1.0f; r += 0.1f) {
+            int token = sample_top_k(logits.data(), logits.size(), 2, 1.0f, r);
+            CHECK((token == 1 || token == 4));
+        }
+    }
+
+    TEST_CASE("Generation - Autoregressive Feedback Loop on Real Model") {
+        Model model("models/stories15M.bin");
+        Tokenizer tokenizer(std::abs(model.config.vocab_size));
+        tokenizer.load("models/tokenizer.bin");
+
+        GenerationConfig gen_cfg;
+        gen_cfg.max_new_tokens = 15;
+        gen_cfg.temperature = 0.0f; // Deterministic greedy decoding
+
+        std::string prompt = "Once upon a time";
+        std::string generated_story = generate(prompt, model, tokenizer, gen_cfg, false);
+
+        CHECK(!generated_story.empty());
+        CHECK(generated_story.find("Once upon") != std::string::npos);
+        // Ensure that new tokens were actually appended
+        CHECK(generated_story.length() > prompt.length());
     }
 }
