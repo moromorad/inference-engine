@@ -10,6 +10,7 @@ OBJ_DIR = $(BUILD_DIR)/obj
 # 2. Targets
 TARGET = $(BUILD_DIR)/engine
 TEST_TARGET = $(BUILD_DIR)/test_runner
+BENCH_TARGET = $(BUILD_DIR)/benchmark
 
 # 3. Source files (everything in src/ except main.cpp)
 CORE_SRCS = $(filter-out src/main.cpp, $(wildcard src/*.cpp))
@@ -19,6 +20,7 @@ CORE_SRCS = $(filter-out src/main.cpp, $(wildcard src/*.cpp))
 CORE_OBJS = $(patsubst src/%.cpp, $(OBJ_DIR)/%.o, $(CORE_SRCS))
 MAIN_OBJ = $(OBJ_DIR)/main.o
 TEST_OBJ = $(OBJ_DIR)/tests.o
+BENCH_OBJ = $(OBJ_DIR)/benchmark.o
 
 all: $(TARGET)
 
@@ -33,31 +35,42 @@ $(TARGET): $(CORE_OBJS) $(MAIN_OBJ)
 run: $(TARGET)
 	./$(TARGET)
 
-# 6. Test Linking Phase
+# 7. Test Linking Phase
 test: $(CORE_OBJS) $(TEST_OBJ)
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $^ -o $(TEST_TARGET) $(LDFLAGS)
 	./$(TEST_TARGET)
 
+# 8. Benchmark Linking and Execution Phase
+benchmark: $(CORE_OBJS) $(BENCH_OBJ)
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $^ -o $(BENCH_TARGET) $(LDFLAGS)
+	./$(BENCH_TARGET)
+
 # PyTorch Parity Check Phase
 parity: $(OBJ_DIR)/kernels.o
 	.venv/bin/python3 scripts/compare_with_pytorch.py
 
-# 7. Compile src/ files into build/obj/
+# 9. Compile src/ files into build/obj/
 $(OBJ_DIR)/%.o: src/%.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# 8. Compile root-level files into build/obj/
+# 10. Compile root-level files into build/obj/
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# 9. Compile test/ files into build/obj/
+# 11. Compile test/ files into build/obj/
 $(OBJ_DIR)/%.o: test/%.cpp
 	@mkdir -p $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# 10. Cleanup is now just deleting the build directory!
+# 12. Compile benchmarks/ files into build/obj/
+$(OBJ_DIR)/%.o: benchmarks/%.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# 13. Cleanup is now just deleting the build directory!
 clean:
 	rm -rf $(BUILD_DIR)

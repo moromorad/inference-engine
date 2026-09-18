@@ -4,3 +4,7 @@ build/
 # Model weights and datasets
 models/
 *.bin
+
+# Benchmark persistence data
+benchmark_results/
+benchmarks/results/
